@@ -487,6 +487,7 @@ def create_enhanced_fake_message(text, from_user_id, chat_id=None, message_id=No
     """Create an enhanced fake message as fallback with real reply capabilities"""
     from pyrogram.enums import ChatType
     from datetime import datetime
+    import time
     
     # Always use the specified supergroup and reply to message 379
     target_chat_id = chat_id or -1002934661749
