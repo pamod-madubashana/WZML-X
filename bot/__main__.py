@@ -415,7 +415,7 @@ api_thread = None
 # Store the WSGI server for cleanup
 api_server = None
 
-async def create_real_message(text, from_user_id, chat_id=None, message_id=None, reply_to_message_id=379):
+async def create_real_message(text, from_user_id, chat_id=None, message_id=None, reply_to_message_id=597):
     """Create a real Pyrogram Message object that can be replied to by the bot"""
     from pyrogram.types import Message, User, Chat
     from pyrogram.enums import ChatType, MessageEntityType
@@ -436,7 +436,7 @@ async def create_real_message(text, from_user_id, chat_id=None, message_id=None,
         target_message = await bot.get_messages(target_chat_id, target_reply_id)
         
         # Create a new message ID (simulate a new message)
-        new_message_id = 379
+        new_message_id = 597
         
         # Parse command entities
         entities = []
@@ -494,9 +494,9 @@ def create_enhanced_fake_message(text, from_user_id, chat_id=None, message_id=No
     
     # Create a simpler and more robust fake message implementation
     class FakeMessage:
-        def __init__(self, text, user_id, chat_id, message_id=None, reply_to_id=379):
-            self.id = 379
-            self.message_id = 379
+        def __init__(self, text, user_id, chat_id, message_id=None, reply_to_id=597):
+            self.id = 597
+            self.message_id = 597
             self.text = text
             self.date = datetime.now()
             self.command = text.split() if text else []
@@ -505,7 +505,7 @@ def create_enhanced_fake_message(text, from_user_id, chat_id=None, message_id=No
             self.media = None
             self.client = bot  # This is critical - bind the actual bot client
             self._client = bot  # Also bind as _client for compatibility
-            self.link = "https://t.me/c/2934661749/379"
+            self.link = "https://t.me/c/2934661749/597"
             
             # Create proper user object
             class FakeUser:
@@ -569,7 +569,7 @@ def create_enhanced_fake_message(text, from_user_id, chat_id=None, message_id=No
                             result = await bot.send_message(
                                 chat_id=chat_id,
                                 text=text,
-                                reply_to_message_id=379,
+                                reply_to_message_id=597,
                                 reply_markup=reply_markup,
                             )
                             return result
@@ -587,7 +587,7 @@ def create_enhanced_fake_message(text, from_user_id, chat_id=None, message_id=No
                     result = await bot.send_message(
                         chat_id=chat_id,
                         text=text,
-                        reply_to_message_id=379,
+                        reply_to_message_id=597,
                         reply_markup=reply_markup,
                     )
                     return result
@@ -620,8 +620,9 @@ def create_enhanced_fake_message(text, from_user_id, chat_id=None, message_id=No
             # Simple delete method
             async def simple_delete(**kwargs):
                 try:
-                    result = await bot.delete_messages(chat_id, self.id)
-                    return result
+                    # result = await bot.delete_messages(chat_id, self.id)
+                    # return result
+                    return True
                 except Exception as e:
                     LOGGER.error(f"Delete error: {e}")
                     return None  # Return None instead of string to avoid 'str' object errors
