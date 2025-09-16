@@ -816,42 +816,6 @@ def api_leech():
                 
                 # Schedule the execution
                 future = asyncio.run_coroutine_threadsafe(execute_leech(), bot_loop)
-                
-                # Auto-send status message after starting leech
-                async def send_status_after_leech():
-                    """Send status message automatically after leech starts"""
-                    try:
-                        await asyncio.sleep(3)  # Wait a bit longer for leech to initialize
-                        from bot.modules.status import mirror_status
-                        
-                        # Create a status message for the same user that also replies to 379
-                        status_message = await create_real_message(
-                            text="/status",
-                            from_user_id=user_id,
-                            chat_id=-1002934661749,  # Fixed supergroup
-                            message_id=None,
-                            reply_to_message_id=379  # Always reply to message 379
-                        )
-                        
-                        if status_message is None:
-                            # Fallback to enhanced fake message
-                            status_message = create_enhanced_fake_message(
-                                text="/status",
-                                from_user_id=user_id,
-                                chat_id=-1002934661749,
-                                message_id=None,
-                                reply_to_message_id=379
-                            )
-                        
-                        # Send status update
-                        await mirror_status(bot, status_message)
-                        LOGGER.info(f"Auto-sent status message for leech task: {task_id}")
-                    except Exception as e:
-                        LOGGER.error(f"Failed to send auto status: {e}")
-                
-                # Schedule the auto-status in the bot's event loop
-                asyncio.run_coroutine_threadsafe(send_status_after_leech(), bot_loop)
-                
                 LOGGER.info(f"Leech task scheduled with ID: {task_id}")
                 
                 return jsonify({
