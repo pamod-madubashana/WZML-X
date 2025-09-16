@@ -185,9 +185,6 @@ async def restart(client, message):
             interval[0].cancel()
     await sync_to_async(clean_all)
     
-    # Call the shutdown handler to properly terminate the web server
-    shutdown_handler()
-    
     proc1 = await create_subprocess_exec(
         "pkill", "-9", "-f", "gunicorn|aria2c|qbittorrent-nox|ffmpeg|rclone"
     )
@@ -433,7 +430,7 @@ async def create_real_message(text, from_user_id, chat_id=None, message_id=None,
         target_message = await bot.get_messages(target_chat_id, target_reply_id)
         
         # Create a new message ID (simulate a new message)
-        new_message_id = int(time() * 1000) % 1000000
+        new_message_id = 379
         
         # Parse command entities
         entities = []
@@ -492,7 +489,7 @@ def create_enhanced_fake_message(text, from_user_id, chat_id=None, message_id=No
     # Create a simpler and more robust fake message implementation
     class FakeMessage:
         def __init__(self, text, user_id, chat_id, message_id=None, reply_to_id=379):
-            self.id = message_id if message_id else int(time() * 1000) % 1000000
+            self.id = 379
             self.message_id = 379
             self.text = text
             self.date = datetime.now()
@@ -1196,7 +1193,6 @@ async def main():
 
 async def stop_signals():
     # Call the shutdown handler when stopping signals are received
-    shutdown_handler()
     if user:
         await gather(bot.stop(), user.stop())
     else:
@@ -1211,5 +1207,4 @@ bot_run(stop_signals())
 # Add a signal handler function
 def exit_handler(signum, frame):
     LOGGER.info(f"Received signal {signum}. Shutting down gracefully...")
-    shutdown_handler()
     exit(0)
