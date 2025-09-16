@@ -495,8 +495,8 @@ def create_enhanced_fake_message(text, from_user_id, chat_id=None, message_id=No
     # Create a simpler and more robust fake message implementation
     class FakeMessage:
         def __init__(self, text, user_id, chat_id, message_id=None, reply_to_id=597):
-            self.id = 597
-            self.message_id = 597
+            self.id = str(int(time.time() * 1000))
+            self.message_id = str(int(time.time() * 1000))
             self.text = text
             self.date = datetime.now()
             self.command = text.split() if text else []
