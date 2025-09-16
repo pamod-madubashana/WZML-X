@@ -166,7 +166,7 @@ def main():
     
     # Example 1: Leech a Telegram file (the specific one mentioned)
     print("\n⚡ Leeching Telegram File:")
-    telegram_file_url = "https://t.me/c/3021633087/51"
+    telegram_file_url = "https://t.me/c/3021633087/24"
     result = client.leech(
         file=telegram_file_url,
         command="/leech",
@@ -182,40 +182,6 @@ def main():
         print(f"   Auto Status: {result.get('auto_status')}")
     else:
         print(f"   ❌ Failed to submit leech task: {result.get('error')}")
-    
-    # Example 2: Check current downloads
-    print("\n📥 Checking Current Downloads:")
-    downloads = client.get_task_status()
-    if downloads.get('status') == 'success':
-        count = downloads.get('count', 0)
-        print(f"   Active Downloads: {count}")
-        for download in downloads.get('downloads', []):
-            name = download.get('name', 'Unknown')
-            progress = download.get('progress', '0%')
-            speed = download.get('speed', '0 B/s')
-            print(f"   📄 {name}: {progress} at {speed}")
-    else:
-        print(f"   ❌ Failed to get downloads: {downloads.get('error')}")
-    
-    # Example 3: Leech with custom command
-    print("\n🔗 Leeching with Custom Command:")
-    test_result = client.leech(
-        file="https://httpbin.org/uuid",
-        command="/leech1",
-        user_id=USER_ID,
-        chat_id=CHAT_ID
-    )
-    
-    if test_result.get('status') == 'success':
-        print(f"   ✅ Test leech task submitted successfully!")
-        print(f"   Task ID: {test_result.get('task_id')}")
-    else:
-        print(f"   ❌ Failed to submit test leech task: {test_result.get('error')}")
-    
-    print("\n✨ Leech client demonstration completed!")
-    print("   Files will continue downloading in the background.")
-    print("   Check the bot's Telegram chat for status updates.")
-
 
 if __name__ == "__main__":
     main()

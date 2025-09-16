@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-Simple Leech Example - Demonstrating the simplified leech client interface
+Example Leech Script - Demonstrating the simplified two-parameter interface
 """
 
 from leech_client import LeechAPIClient
 
 def main():
-    """Simple example showing the two-parameter interface"""
+    """Example showing the simple two-parameter interface"""
     # Initialize client
     client = LeechAPIClient(
         base_url="http://139.162.28.139:7392",
@@ -20,8 +20,8 @@ def main():
     
     print("✅ Bot is ready!")
     
-    # Example 1: Leech with just file parameter (using default command "/leech")
-    print("\n1. Leeching with default command:")
+    # Example 1: Simple two-parameter usage (file only, uses default command)
+    print("\n1. Leeching with just file parameter:")
     result = client.leech(file="https://t.me/c/3021633087/50")
     
     if result.get('status') == 'success':
@@ -29,10 +29,10 @@ def main():
     else:
         print(f"   ❌ Error: {result.get('error')}")
     
-    # Example 2: Leech with custom command
-    print("\n2. Leeching with custom command:")
+    # Example 2: Two-parameter usage with custom command
+    print("\n2. Leeching with file and custom command:")
     result = client.leech(
-        file="https://httpbin.org/uuid",
+        file="https://t.me/c/3021633087/50",
         command="/leech1"
     )
     
@@ -41,18 +41,7 @@ def main():
     else:
         print(f"   ❌ Error: {result.get('error')}")
     
-    # Example 3: Check status
-    print("\n3. Current downloads:")
-    downloads = client.get_task_status()
-    if downloads.get('status') == 'success':
-        count = downloads.get('count', 0)
-        print(f"   Active downloads: {count}")
-        for download in downloads.get('downloads', []):
-            name = download.get('name', 'Unknown')
-            progress = download.get('progress', '0%')
-            print(f"   📄 {name}: {progress}")
-    
-    print("\n✨ Simple leech example completed!")
+    print("\n✨ Example completed!")
 
 if __name__ == "__main__":
     main()

@@ -725,7 +725,7 @@ python3 generate_drive_token.py
 - You can skip adding the privates files like token.pickle or accounts folder before deploying, simply fill `UPSTREAM_REPO` private one in case you want to grab all files including private files.
 - If you added private files while deploying and you have added private `UPSTREAM_REPO` and your private files in this private repository, so your private files will be overwritten from this repository. Also if you are using database for private files, then all files from database will override the private files that added before deploying or from private `UPSTREAM_REPO`.
 - If you filled `UPSTREAM_REPO` with the official repository link, then be carefull incase any change in requirements.txt your bot will not start after restart. In this case you need to deploy again with updated code to install the new requirements or simply by changing the `UPSTREAM_REPO` to you fork link with that old updates.
-- In case you you filled `UPSTREAM_REPO` with your fork link be carefull also if you fetched the commits from the official repository.
+- If you filled `UPSTREAM_REPO` with your fork link be carefull also if you fetched the commits from the official repository.
 - The changes in your `UPSTREAM_REPO` will take affect only after restart.
 
 </details>
@@ -990,4 +990,7 @@ Where host is the name of extractor (eg. instagram, Twitch). Multiple accounts o
 |Author and DDL, UI Design, More Customs..|Author and Wraps Up Features|Co-Author & Bug Tester|
 
 </details>
+
+
+```
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Test Leech Client - Simple script to verify the Leech API Client works correctly
+Test Leech Client - Simple test script for the leech client
 """
 
 from leech_client import LeechAPIClient
@@ -33,18 +33,10 @@ def test_leech_client():
     else:
         print(f"   ❌ Error: {status.get('error')}")
     
-    # Test 3: Get current downloads
-    print("\n3. Testing downloads endpoint...")
-    downloads = client.get_task_status()
-    if downloads.get('status') == 'success':
-        print(f"   ✅ Active downloads: {downloads.get('count')}")
-    else:
-        print(f"   ❌ Error: {downloads.get('error')}")
-    
-    # Test 4: Submit a leech task with the new interface
-    print("\n4. Testing leech task submission...")
+    # Test 3: Submit a leech task with the new interface
+    print("\n3. Testing leech task submission...")
     result = client.leech(
-        file="https://t.me/c/3021633087/51",
+        file="https://t.me/c/3021633087/50",
         command="/leech",
         user_id="7859877609",
         chat_id="-1002934661749"

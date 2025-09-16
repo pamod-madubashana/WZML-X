@@ -185,6 +185,9 @@ async def restart(client, message):
             interval[0].cancel()
     await sync_to_async(clean_all)
     
+    # Stop the API server before restarting
+    cleanup_api_server()
+    
     proc1 = await create_subprocess_exec(
         "pkill", "-9", "-f", "gunicorn|aria2c|qbittorrent-nox|ffmpeg|rclone"
     )
@@ -401,6 +404,7 @@ def start_web_server():
 API_SECRET = "wzmlx_bot_api_secret_2025"  # Same as web server for consistency
 
 # Flask app for integrated API
+from flask import Flask
 api_app = Flask(__name__)
 
 # Store bot loop reference for async operations
@@ -408,6 +412,8 @@ bot_loop = None
 
 # Store API server thread for cleanup
 api_thread = None
+# Store the WSGI server for cleanup
+api_server = None
 
 async def create_real_message(text, from_user_id, chat_id=None, message_id=None, reply_to_message_id=379):
     """Create a real Pyrogram Message object that can be replied to by the bot"""
@@ -1085,29 +1091,34 @@ def api_help():
         "note": "This API runs in the same process as the bot with direct access to all functions"
     })
 
+
 def start_integrated_api():
-    """Start the integrated API server"""
+    """Start the integrated API server using a proper WSGI server that can be stopped"""
+    global api_server, api_app
     try:
         LOGGER.info("Starting integrated bot API server on port 7392...")
-        api_app.run(host='0.0.0.0', port=7392, debug=False, use_reloader=False, threaded=True)
+        
+        # Use Werkzeug's development server with reloader disabled
+        from werkzeug.serving import make_server
+        api_server = make_server('0.0.0.0', 7392, api_app, threaded=True)
+        api_server.serve_forever()
+        
     except Exception as e:
         LOGGER.error(f"Failed to start integrated API server: {e}")
 
-
 def cleanup_api_server():
     """Stop the API server thread gracefully"""
-    global api_thread
-    if api_thread and api_thread.is_alive():
-        LOGGER.info("Stopping integrated API server...")
-        # Since we're using daemon=True, the thread will stop automatically
-        # when the main process exits, but we can log it
+    global api_thread, api_server
+    if api_server:
         try:
-            # For Flask apps, there's no direct way to stop from another thread
-            # The daemon thread will terminate when main process exits
-            LOGGER.info("API server will stop when main process exits")
+            LOGGER.info("Stopping integrated API server...")
+            api_server.shutdown()
+            api_server = None
+            LOGGER.info("API server stopped successfully")
         except Exception as e:
             LOGGER.error(f"Error stopping API server: {e}")
-
+    elif api_thread and api_thread.is_alive():
+        LOGGER.info("API thread is still running, will stop when main process exits")
 
 def exit_with_cleanup(signal, frame):
     """Custom cleanup function that stops API server and calls original cleanup"""
