@@ -116,8 +116,11 @@ def clean_all():
 
 def exit_clean_up(signal, frame):
     try:
+        from bot import shutdown_handler  # Import the shutdown handler
         LOGGER.info("Please wait, while we clean up and stop the running downloads")
         clean_all()
+        # Call the shutdown handler to properly terminate the web server
+        shutdown_handler()
         srun(["pkill", "-9", "-f", "gunicorn|aria2c|qbittorrent-nox|ffmpeg"])
         sexit(0)
     except KeyboardInterrupt:

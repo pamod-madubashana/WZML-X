@@ -799,7 +799,9 @@ if ospath.exists("shorteners.txt"):
                 shorteners_list.append({"domain": temp[0], "api_key": temp[1]})
 
 if BASE_URL:
-    Popen(
+    # Store the process reference so we can terminate it later
+    global web_server_process
+    web_server_process = Popen(
         f"gunicorn web.wserver:app --bind 0.0.0.0:{BASE_URL_PORT} --worker-class gevent",
         shell=True,
     )
@@ -899,3 +901,18 @@ bot = wztgClient(
 bot_loop = bot.loop
 bot_name = bot.me.username
 scheduler = AsyncIOScheduler(timezone=str(get_localzone()), event_loop=bot_loop)
+
+
+def shutdown_handler():
+    global web_server_process
+    if web_server_process:
+        try:
+            web_server_process.terminate()  # Try graceful termination first
+            web_server_process.wait(timeout=5)  # Wait up to 5 seconds
+        except:
+            try:
+                web_server_process.kill()  # Force kill if graceful termination fails
+                web_server_process.wait()
+            except:
+                pass  # If we can't kill it, nothing more we can do
+        web_server_process = None

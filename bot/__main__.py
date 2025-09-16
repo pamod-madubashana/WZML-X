@@ -10,7 +10,7 @@ from importlib import import_module, reload
 from requests import get as rget
 from pytz import timezone
 from bs4 import BeautifulSoup
-from signal import signal, SIGINT
+from signal import signal, SIGINT, SIGTERM
 from aiofiles.os import path as aiopath, remove as aioremove
 from aiofiles import open as aiopen
 from pyrogram import idle
@@ -32,6 +32,7 @@ from bot import (
     QbInterval,
     INCOMPLETE_TASK_NOTIFIER,
     scheduler,
+    shutdown_handler,
 )
 from bot.version import get_version
 from .helper.ext_utils.fs_utils import start_cleanup, clean_all, exit_clean_up
@@ -175,6 +176,10 @@ async def restart(client, message):
         if interval:
             interval[0].cancel()
     await sync_to_async(clean_all)
+    
+    # Call the shutdown handler to properly terminate the web server
+    shutdown_handler()
+    
     proc1 = await create_subprocess_exec(
         "pkill", "-9", "-f", "gunicorn|aria2c|qbittorrent-nox|ffmpeg|rclone"
     )
@@ -374,6 +379,827 @@ async def log_check():
                 LOGGER.error(f"Not Connected Chat ID : {chat_id}, ERROR: {e}")
 
 
+def start_web_server():
+    """Start the web server in a separate thread"""
+    try:
+        LOGGER.info("Starting web server...")
+        from web.wserver import app
+        app.run(host='0.0.0.0', port=8080, debug=False, use_reloader=False)
+    except Exception as e:
+        LOGGER.error(f"Failed to start web server: {e}")
+
+
+# =============================================
+# INTEGRATED BOT API - Direct Access to Bot Functions
+# =============================================
+
+# API Configuration
+API_SECRET = "your_bot_api_secret_key_here"  # Same as web server for consistency
+
+# Flask app for integrated API
+api_app = Flask(__name__)
+
+# Store bot loop reference for async operations
+bot_loop = None
+
+# Store API server thread for cleanup
+api_thread = None
+
+async def create_real_message(text, from_user_id, chat_id=None, message_id=None, reply_to_message_id=379):
+    """Create a real Pyrogram Message object that can be replied to by the bot"""
+    from pyrogram.types import Message, User, Chat
+    from pyrogram.enums import ChatType, MessageEntityType
+    from datetime import datetime
+    
+    # Always use the specified supergroup and reply to message 379
+    target_chat_id = -1002934661749  # Fixed supergroup
+    target_reply_id = reply_to_message_id  # Fixed message to reply to
+    
+    try:
+        # Get the real chat object from Telegram
+        real_chat = await bot.get_chat(target_chat_id)
+        
+        # Get the real user object from Telegram
+        real_user = await bot.get_users(from_user_id)
+        
+        # Get the target message to reply to
+        target_message = await bot.get_messages(target_chat_id, target_reply_id)
+        
+        # Create a new message ID (simulate a new message)
+        new_message_id = int(time() * 1000) % 1000000
+        
+        # Parse command entities
+        entities = []
+        if text.startswith('/'):
+            command_part = text.split()[0]
+            entities = [{
+                "type": MessageEntityType.BOT_COMMAND,
+                "offset": 0,
+                "length": len(command_part),
+                "url": None,
+                "user": None,
+                "language": None,
+                "custom_emoji_id": None
+            }]
+        # Create the real Message object with all required attributes
+        real_message = Message(
+            id=new_message_id,
+            message_id=new_message_id,
+            from_user=real_user,
+            sender_chat=None,
+            date=datetime.now(),
+            chat=real_chat,
+            text=text,
+            entities=entities,
+            reply_to_message_id=target_reply_id,
+            reply_to_message=target_message,
+            client=bot  # Bind the bot client to the message
+        )
+        
+        # Parse command for easier access
+        real_message.command = text.split()
+        
+        # Create the link attribute
+        chat_link_id = abs(target_chat_id) - 1000000000000
+        real_message.link = f"https://t.me/c/{chat_link_id}/{new_message_id}"
+        
+        LOGGER.info(f"Created real message ID {new_message_id} replying to {target_reply_id} in chat {target_chat_id}")
+        return real_message
+        
+    except Exception as e:
+        LOGGER.error(f"Failed to create real message: {e}")
+        # Fallback to enhanced fake message if real message creation fails
+        return create_enhanced_fake_message(text, from_user_id, target_chat_id, message_id, target_reply_id)
+
+def create_enhanced_fake_message(text, from_user_id, chat_id=None, message_id=None, reply_to_message_id=379):
+    """Create an enhanced fake message as fallback with real reply capabilities"""
+    from pyrogram.enums import ChatType
+    from datetime import datetime
+    
+    # Always use the specified supergroup and reply to message 379
+    target_chat_id = chat_id or -1002934661749
+    target_reply_id = reply_to_message_id
+    
+    # Create comprehensive fake User object with real user details
+    class FakeUser:
+        def __init__(self, user_id):
+            # Use real user details for user ID 7859877609
+            if user_id == 7859877609:
+                self.id = 7859877609
+                self.is_bot = False
+                self.first_name = "Pamod [\u2067[\u26a1"
+                self.username = "pamod_madubashana"
+                self.language_code = "en"
+            else:
+                # Default values for other users
+                self.id = user_id
+                self.first_name = "API User"
+                self.username = "api_user"
+                self.language_code = "en"
+            
+            # Common attributes
+            self.is_self = False
+            self.is_contact = False
+            self.is_mutual_contact = False
+            self.is_deleted = False
+            self.is_verified = False
+            self.is_restricted = False
+            self.is_scam = False
+            self.is_fake = False
+            self.is_premium = False
+            self.last_name = None
+            
+        def mention(self, style="text"):
+            """Return mention string for the user"""
+            if style == "html":
+                return f'<a href="tg://user?id={self.id}">{self.first_name}</a>'
+            else:
+                return f"@{self.username or self.first_name}"
+    
+    # Create comprehensive fake Chat object with real chat details
+    class FakeChat:
+        def __init__(self, chat_id):
+            # Use real supergroup details for -1002934661749
+            if chat_id == -1002934661749:
+                self.id = -1002934661749
+                self.type = ChatType.SUPERGROUP
+                self.title = "Serandip Leech"  # You can customize this
+                self.username = None  # Supergroups may or may not have usernames
+                self.first_name = None
+            elif chat_id == 7859877609:  # Private chat with user
+                self.id = 7859877609
+                self.type = ChatType.PRIVATE
+                self.first_name = "Pamod [\u2067[\u26a1"
+                self.username = "pamod_madubashana"
+                self.title = None
+            else:
+                # Default values for other chats
+                self.id = chat_id or -1001234567890
+                self.type = ChatType.SUPERGROUP
+                self.title = "Serandip Leech"
+                self.first_name = None
+                self.username = None
+            
+            # Common attributes
+            self.is_verified = False
+            self.is_restricted = False
+            self.is_creator = False
+            self.is_scam = False
+            self.is_fake = False
+    
+    # Create comprehensive fake Message object with real reply capabilities
+    class FakeMessage:
+        def __init__(self, text, user_id, chat_id, message_id=None, reply_to_id=379):
+            # Use provided message_id or generate one
+            self.id = message_id if message_id else int(time() * 1000)
+            self.message_id = self.id
+            self.text = text
+            self.from_user = FakeUser(user_id)
+            self.chat = FakeChat(chat_id)
+            self.date = datetime.now()
+            self.command = text.split()
+            self.reply_to_message_id = reply_to_id  # Always use the fixed reply ID
+            self.sender_chat = None
+            self.media = None
+            self.client = bot  # Bind the bot client for real operations
+            
+            # Create reply_to_message object that references the fixed message
+            class FakeReplyMessage:
+                def __init__(self, reply_id, chat_id):
+                    self.id = reply_id
+                    self.message_id = reply_id
+                    self.text = f"Target message {reply_id}"  # Placeholder text
+                    self.from_user = FakeUser(user_id)  # Same user
+                    self.chat = FakeChat(chat_id)  # Same chat
+                    self.date = datetime.now()
+                    self.media = None
+                    self.client = bot  # Bind the bot client
+                    
+                    # Add the missing link attribute for the fixed message
+                    if chat_id == -1002934661749:  # Your supergroup
+                        chat_link_id = abs(chat_id) - 1000000000000
+                        self.link = f"https://t.me/c/{chat_link_id}/{reply_id}"
+                    else:
+                        chat_link_id = abs(chat_id) - 1000000000000 if chat_id < 0 else chat_id
+                        self.link = f"https://t.me/c/{chat_link_id}/{reply_id}"
+                    
+                    # Add common message attributes
+                    self.entities = []
+                    self.caption = None
+                    self.document = None
+                    self.video = None
+                    self.photo = None
+                    self.audio = None
+                    self.animation = None
+                    self.sticker = None
+                    self.voice = None
+                    self.video_note = None
+                    self.contact = None
+                    self.location = None
+                    self.venue = None
+                    self.poll = None
+                    self.dice = None
+                    self.web_page = None
+                    self.reply_markup = None
+                    self.forward_from = None
+                    self.forward_from_chat = None
+                    self.forward_date = None
+                    self.edit_date = None
+                    self.media_group_id = None
+                    self.author_signature = None
+                    self.views = None
+                    self.forwards = None
+                    self.reply_to_message = None
+                    
+                    # Add REAL async methods that use the bot client
+                    async def reply(self, text, **kwargs):
+                        """Real reply using bot client"""
+                        try:
+                            return await bot.send_message(
+                                chat_id=chat_id,
+                                text=text,
+                                reply_to_message_id=reply_id,
+                                **kwargs
+                            )
+                        except Exception as e:
+                            LOGGER.error(f"Real reply error: {e}")
+                            return self
+                            
+                    async def delete(self, **kwargs):
+                        """Real delete using bot client"""
+                        try:
+                            return await bot.delete_messages(chat_id, reply_id)
+                        except Exception as e:
+                            LOGGER.error(f"Real delete error: {e}")
+                            return self
+
+                    async def edit_text(self, text, **kwargs):
+                        """Real edit using bot client"""
+                        try:
+                            return await bot.edit_message_text(
+                                chat_id=chat_id,
+                                message_id=reply_id,
+                                text=text,
+                                **kwargs
+                            )
+                        except Exception as e:
+                            LOGGER.error(f"Real edit error: {e}")
+                            return self
+                            
+                    # Bind methods to instance
+                    self.reply = reply
+                    self.delete = delete
+                    self.edit_text = edit_text
+                    
+            self.reply_to_message = FakeReplyMessage(reply_to_id, chat_id)
+            
+            # Add entities for bot commands
+            self.entities = []
+            if text.startswith('/'):
+                command_part = text.split()[0]
+                self.entities = [{
+                    "offset": 0,
+                    "length": len(command_part),
+                    "type": "bot_command"
+                }]
+            
+            # Create proper Telegram link
+            chat_link_id = abs(chat_id) - 1000000000000 if chat_id < 0 else chat_id
+            self.link = f"https://t.me/c/{chat_link_id}/{self.id}"
+            
+            # Add REAL async methods that use the bot client for the main message too
+            async def reply(self, text, **kwargs):
+                """Real reply using bot client"""
+                try:
+                    return await bot.send_message(
+                        chat_id=chat_id,
+                        text=text,
+                        reply_to_message_id=self.id,
+                        **kwargs
+                    )
+                except Exception as e:
+                    LOGGER.error(f"Real reply error: {e}")
+                    return self
+                    
+            async def delete(self, **kwargs):
+                """Real delete using bot client"""
+                try:
+                    return await bot.delete_messages(chat_id, self.id)
+                except Exception as e:
+                    LOGGER.error(f"Real delete error: {e}")
+                    return self
+
+            async def edit_text(self, text, **kwargs):
+                """Real edit using bot client"""
+                try:
+                    return await bot.edit_message_text(
+                        chat_id=chat_id,
+                        message_id=self.id,
+                        text=text,
+                        **kwargs
+                    )
+                except Exception as e:
+                    LOGGER.error(f"Real edit error: {e}")
+                    return self
+                    
+            async def edit(self, text, **kwargs):
+                """Real edit method (alternative)"""
+                return await self.edit_text(text, **kwargs)
+                
+            # Bind methods to instance
+            self.reply = reply
+            self.delete = delete
+            self.edit_text = edit_text
+            self.edit = edit
+    
+    return FakeMessage(text, from_user_id, target_chat_id, message_id, target_reply_id)
+
+def verify_api_signature(func):
+    """Decorator to verify API requests with HMAC signature"""
+    @wraps(func)
+    def decorated_function(*args, **kwargs):
+        signature = request.headers.get('X-Bot-Signature')
+        if not signature:
+            return jsonify({"error": "Missing signature"}), 401
+        
+        if request.method == 'POST':
+            body = request.get_data()
+        else:
+            body = b''
+        
+        expected_signature = hmac.new(
+            API_SECRET.encode(),
+            body,
+            hashlib.sha256
+        ).hexdigest()
+        
+        if not hmac.compare_digest(signature, expected_signature):
+            return jsonify({"error": "Invalid signature"}), 401
+        
+        return func(*args, **kwargs)
+    return decorated_function
+
+@api_app.route("/api/status", methods=["GET"])
+@verify_api_signature
+def api_get_status():
+    """Get bot status information"""
+    try:
+        # Get real bot stats using the existing stats function
+        downloads = 0  # Will be updated with real data
+        
+        return jsonify({
+            "status": "success",
+            "bot_status": "online",
+            "active_downloads": downloads,
+            "bot_available": True,
+            "download_dir": "/usr/src/app/downloads",
+            "message": "Bot status retrieved successfully",
+            "timestamp": int(time()),
+            "api_version": "2.0 - Integrated"
+        })
+    except Exception as e:
+        LOGGER.error(f"API Status Error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@api_app.route("/api/leech", methods=["POST"])
+@verify_api_signature
+def api_leech():
+    """Start a leech task via API - REAL EXECUTION with full command support"""
+    try:
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({"error": "Missing request data"}), 400
+        
+        # Extract message ID from file URL if present
+        extracted_message_id = None
+        if 'command' in data:
+            command_text = data['command']
+            # Look for Telegram URLs in the command to extract message ID
+            if 'https://t.me/c/' in command_text:
+                try:
+                    # Extract message ID from URL like https://t.me/c/2934661749/76
+                    url_part = command_text.split('https://t.me/c/')[1].split()[0]
+                    extracted_message_id = int(url_part.split('/')[-1])
+                    LOGGER.info(f"Extracted message ID: {extracted_message_id} from command")
+                except (IndexError, ValueError) as e:
+                    LOGGER.warning(f"Could not extract message ID from command: {e}")
+        
+        # Support both 'command' and 'url' parameters  
+        if 'command' in data:
+            # Full command mode - use complete command text as-is
+            command_text = data['command']
+            user_id = int(data.get('user_id', 7859877609))
+            chat_id = int(data.get('chat_id', -1001234567890))
+            
+            LOGGER.info(f"API Leech Full Command: {command_text} for user {user_id}")
+            
+        elif 'url' in data:
+            # Legacy URL mode with optional custom name
+            url = data['url']
+            user_id = int(data.get('user_id', 7859877609))
+            custom_name = data.get('custom_name', '')
+            chat_id = int(data.get('chat_id', -1001234567890))
+            
+            # Extract message ID only for Telegram URLs
+            if 'https://t.me/c/' in url:
+                try:
+                    url_part = url.split('https://t.me/c/')[1].split()[0]
+                    extracted_message_id = int(url_part.split('/')[-1])
+                except (IndexError, ValueError) as e:
+                    LOGGER.warning(f"Could not extract message ID from Telegram URL: {e}")
+                    extracted_message_id = None
+            else:
+                # For non-Telegram URLs, don't extract message ID
+                extracted_message_id = None
+            
+            # Create command text
+            if custom_name:
+                command_text = f"/leech {url} -n {custom_name}"
+            else:
+                command_text = f"/leech {url}"
+                
+            LOGGER.info(f"API Leech Request: {url} for user {user_id} with custom name: {custom_name}")
+        else:
+            return jsonify({"error": "Missing 'url' or 'command' parameter"}), 400
+        
+        # Create async wrapper for message creation
+        async def create_message_async():
+            """Async wrapper for message creation"""
+            try:
+                # Always create real message that replies to fixed message 379
+                LOGGER.info(f"Creating real message that always replies to message 379 in supergroup -1002934661749")
+                
+                # Use the new create_real_message function that always replies to message 379
+                fake_message = await create_real_message(
+                    text=command_text,
+                    from_user_id=user_id,
+                    chat_id=-1002934661749,  # Fixed supergroup
+                    message_id=None,
+                    reply_to_message_id=379  # Always reply to message 379
+                )
+                
+                if fake_message is None:
+                    # Fallback to enhanced fake message if real message creation fails
+                    fake_message = create_enhanced_fake_message(
+                        text=command_text,
+                        from_user_id=user_id,
+                        chat_id=-1002934661749,  # Fixed supergroup
+                        message_id=None,
+                        reply_to_message_id=379  # Always reply to message 379
+                    )
+                
+                return fake_message
+            except Exception as e:
+                LOGGER.error(f"Error creating message: {e}")
+                # Fallback to enhanced fake message
+                return create_enhanced_fake_message(
+                    text=command_text,
+                    from_user_id=user_id,
+                    chat_id=-1002934661749,
+                    message_id=None,
+                    reply_to_message_id=379
+                )
+        
+        # Generate task ID
+        task_id = f"api_leech_{int(time() * 1000)}"
+        
+        # Execute message creation and leech command in the bot's event loop
+        if bot_loop and not bot_loop.is_closed():
+            # Import the leech function from mirror_leech module
+            from bot.modules.mirror_leech import _mirror_leech
+            
+            # Schedule the message creation and leech command to run in bot's event loop
+            try:
+                # Create message in bot loop
+                future_message = asyncio.run_coroutine_threadsafe(create_message_async(), bot_loop)
+                fake_message = future_message.result(timeout=30)  # 30 second timeout
+                
+                if fake_message is None:
+                    return jsonify({
+                        "error": "Failed to create message object",
+                        "status": "error"
+                    }), 500
+                
+                # Create a wrapper to properly handle the async execution
+                async def execute_leech():
+                    """Wrapper to execute leech command with proper error handling"""
+                    try:
+                        await _mirror_leech(bot, fake_message, isQbit=False, isLeech=True, sameDir=None, bulk=[])
+                        LOGGER.info(f"Leech command executed successfully for task: {task_id}")
+                    except Exception as e:
+                        LOGGER.error(f"Error in leech execution: {e}")
+                        raise e
+                
+                # Schedule the execution
+                future = asyncio.run_coroutine_threadsafe(execute_leech(), bot_loop)
+                
+                # Auto-send status message after starting leech
+                async def send_status_after_leech():
+                    """Send status message automatically after leech starts"""
+                    try:
+                        await asyncio.sleep(3)  # Wait a bit longer for leech to initialize
+                        from bot.modules.status import mirror_status
+                        
+                        # Create a status message for the same user that also replies to 379
+                        status_message = await create_real_message(
+                            text="/status",
+                            from_user_id=user_id,
+                            chat_id=-1002934661749,  # Fixed supergroup
+                            message_id=None,
+                            reply_to_message_id=379  # Always reply to message 379
+                        )
+                        
+                        if status_message is None:
+                            # Fallback to enhanced fake message
+                            status_message = create_enhanced_fake_message(
+                                text="/status",
+                                from_user_id=user_id,
+                                chat_id=-1002934661749,
+                                message_id=None,
+                                reply_to_message_id=379
+                            )
+                        
+                        # Send status update
+                        await mirror_status(bot, status_message)
+                        LOGGER.info(f"Auto-sent status message for leech task: {task_id}")
+                    except Exception as e:
+                        LOGGER.error(f"Failed to send auto status: {e}")
+                
+                # Schedule the auto-status in the bot's event loop
+                asyncio.run_coroutine_threadsafe(send_status_after_leech(), bot_loop)
+                
+                LOGGER.info(f"Leech task scheduled with ID: {task_id}")
+                
+                return jsonify({
+                    "status": "success",
+                    "message": f"Leech command executed successfully with real message object",
+                    "task_id": task_id,
+                    "user_id": user_id,
+                    "chat_id": -1002934661749,
+                    "reply_to_message_id": 379,
+                    "telegram_command": command_text,
+                    "timestamp": int(time()),
+                    "auto_status": True,
+                    "note": "Real Pyrogram message created. Bot can now reply properly. Status message will be sent automatically."
+                })
+                
+            except Exception as async_error:
+                LOGGER.error(f"Async execution error: {async_error}")
+                return jsonify({
+                    "error": f"Failed to execute leech command: {str(async_error)}",
+                    "status": "error"
+                }), 500
+        else:
+            return jsonify({
+                "error": "Bot event loop not available",
+                "status": "error"
+            }), 500
+            
+    except Exception as e:
+        LOGGER.error(f"API Leech Error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@api_app.route("/api/downloads", methods=["GET"])
+@verify_api_signature
+def api_get_downloads():
+    """Get list of current downloads"""
+    try:
+        # Import the download_dict to get real download data
+        from bot import download_dict
+        
+        downloads = []
+        
+        # Get current tasks from download_dict
+        for task_id, task in download_dict.items():
+            downloads.append({
+                "name": getattr(task, 'name', lambda: 'Unknown')() if callable(getattr(task, 'name', None)) else getattr(task, 'name', 'Unknown'),
+                "progress": getattr(task, 'progress', lambda: 0)() if callable(getattr(task, 'progress', None)) else getattr(task, 'progress', 0),
+                "speed": getattr(task, 'speed', lambda: '0 B/s')() if callable(getattr(task, 'speed', None)) else getattr(task, 'speed', '0 B/s'),
+                "eta": getattr(task, 'eta', lambda: 'Unknown')() if callable(getattr(task, 'eta', None)) else getattr(task, 'eta', 'Unknown'),
+                "status": getattr(task, 'status', lambda: 'Unknown')() if callable(getattr(task, 'status', None)) else getattr(task, 'status', 'Unknown'),
+                "task_id": task_id
+            })
+        
+        return jsonify({
+            "status": "success",
+            "downloads": downloads,
+            "count": len(downloads),
+            "message": "Downloads retrieved successfully",
+            "timestamp": int(time())
+        })
+        
+    except Exception as e:
+        LOGGER.error(f"API Downloads Error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@api_app.route("/api/mirror", methods=["POST"])
+@verify_api_signature
+def api_mirror():
+    """Start a mirror task via API - REAL EXECUTION"""
+    try:
+        data = request.get_json()
+        
+        if not data or 'url' not in data:
+            return jsonify({"error": "Missing 'url' parameter"}), 400
+        
+        url = data['url']
+        user_id = int(data.get('user_id', 7859877609))
+        chat_id = int(data.get('chat_id', -1001234567890))
+        
+        command_text = f"/mirror {url}"
+        
+        # Create async wrapper for message creation
+        async def create_mirror_message_async():
+            """Async wrapper for mirror message creation"""
+            try:
+                # Always create real message that replies to fixed message 379
+                mock_message = await create_real_message(
+                    text=command_text,
+                    from_user_id=user_id,
+                    chat_id=-1002934661749,  # Fixed supergroup
+                    message_id=None,
+                    reply_to_message_id=379  # Always reply to message 379
+                )
+                
+                if mock_message is None:
+                    # Fallback to enhanced fake message
+                    mock_message = create_enhanced_fake_message(
+                        text=command_text,
+                        from_user_id=user_id,
+                        chat_id=-1002934661749,
+                        message_id=None,
+                        reply_to_message_id=379
+                    )
+                
+                return mock_message
+            except Exception as e:
+                LOGGER.error(f"Error creating mirror message: {e}")
+                # Fallback to enhanced fake message
+                return create_enhanced_fake_message(
+                    text=command_text,
+                    from_user_id=user_id,
+                    chat_id=-1002934661749,
+                    message_id=None,
+                    reply_to_message_id=379
+                )
+        
+        task_id = f"api_mirror_{int(time() * 1000)}"
+        
+        if bot_loop and not bot_loop.is_closed():
+            from bot.modules.mirror_leech import _mirror_leech
+            
+            try:
+                # Create message in bot loop
+                future_message = asyncio.run_coroutine_threadsafe(create_mirror_message_async(), bot_loop)
+                mock_message = future_message.result(timeout=30)  # 30 second timeout
+                
+                if mock_message is None:
+                    return jsonify({
+                        "error": "Failed to create mirror message object",
+                        "status": "error"
+                    }), 500
+            
+                # Create a wrapper to properly handle the async execution
+                async def execute_mirror():
+                    """Wrapper to execute mirror command with proper error handling"""
+                    try:
+                        await _mirror_leech(bot, mock_message, isQbit=False, isLeech=False, sameDir=None, bulk=[])
+                        LOGGER.info(f"Mirror command executed successfully for task: {task_id}")
+                    except Exception as e:
+                        LOGGER.error(f"Error in mirror execution: {e}")
+                        raise e
+                
+                future = asyncio.run_coroutine_threadsafe(execute_mirror(), bot_loop)
+                
+                LOGGER.info(f"Mirror task scheduled with ID: {task_id}")
+                
+                return jsonify({
+                    "status": "success",
+                    "message": f"Mirror task started for URL: {url} with real message object",
+                    "task_id": task_id,
+                    "user_id": user_id,
+                    "url": url,
+                    "chat_id": -1002934661749,
+                    "reply_to_message_id": 379,
+                    "telegram_command": command_text,
+                    "timestamp": int(time()),
+                    "note": "Real Pyrogram message created. Bot can now reply properly."
+                })
+                
+            except Exception as async_error:
+                LOGGER.error(f"Async mirror execution error: {async_error}")
+                return jsonify({
+                    "error": f"Failed to execute mirror command: {str(async_error)}",
+                    "status": "error"
+                }), 500
+        else:
+            return jsonify({
+                "error": "Bot event loop not available",
+                "status": "error"
+            }), 500
+            
+    except Exception as e:
+        LOGGER.error(f"API Mirror Error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@api_app.route("/api/help", methods=["GET"])
+def api_help():
+    """Get API documentation"""
+    return jsonify({
+        "api_version": "2.0 - Integrated Bot API",
+        "description": "Direct access to bot functions via API",
+        "endpoints": {
+            "/api/status": {
+                "method": "GET",
+                "description": "Get bot status information",
+                "auth_required": True
+            },
+            "/api/leech": {
+                "method": "POST",
+                "description": "Start a leech task - REAL EXECUTION with full command support",
+                "auth_required": True,
+                "parameters": {
+                    "command": "(option 1) Full leech command text (e.g., '/leech1 https://example.com -n filename.mkv')",
+                    "url": "(option 2) URL to leech (legacy mode)",
+                    "user_id": "(optional) User ID for the task",
+                    "custom_name": "(optional, with url) Custom filename",
+                    "chat_id": "(optional) Chat ID for task"
+                },
+                "examples": {
+                    "full_command": {
+                        "command": "/leech1 https://t.me/c/123456789/10 -n MyFile.mkv",
+                        "user_id": "7859877609",
+                        "chat_id": -1001234567890
+                    },
+                    "legacy_url": {
+                        "url": "https://example.com/file.zip",
+                        "custom_name": "MyFile.zip",
+                        "user_id": "7859877609"
+                    }
+                }
+            },
+            "/api/mirror": {
+                "method": "POST",
+                "description": "Start a mirror task - REAL EXECUTION",
+                "auth_required": True,
+                "parameters": {
+                    "url": "(required) URL to mirror",
+                    "user_id": "(optional) User ID for the task",
+                    "chat_id": "(optional) Chat ID for task"
+                }
+            },
+            "/api/downloads": {
+                "method": "GET",
+                "description": "Get list of current downloads",
+                "auth_required": True
+            }
+        },
+        "authentication": {
+            "type": "HMAC-SHA256",
+            "header": "X-Bot-Signature",
+            "description": "Sign request body with shared secret key"
+        },
+        "note": "This API runs in the same process as the bot with direct access to all functions"
+    })
+
+def start_integrated_api():
+    """Start the integrated API server"""
+    try:
+        LOGGER.info("Starting integrated bot API server on port 7392...")
+        api_app.run(host='0.0.0.0', port=7392, debug=False, use_reloader=False, threaded=True)
+    except Exception as e:
+        LOGGER.error(f"Failed to start integrated API server: {e}")
+
+
+def cleanup_api_server():
+    """Stop the API server thread gracefully"""
+    global api_thread
+    if api_thread and api_thread.is_alive():
+        LOGGER.info("Stopping integrated API server...")
+        # Since we're using daemon=True, the thread will stop automatically
+        # when the main process exits, but we can log it
+        try:
+            # For Flask apps, there's no direct way to stop from another thread
+            # The daemon thread will terminate when main process exits
+            LOGGER.info("API server will stop when main process exits")
+        except Exception as e:
+            LOGGER.error(f"Error stopping API server: {e}")
+
+
+def exit_with_cleanup(signal, frame):
+    """Custom cleanup function that stops API server and calls original cleanup"""
+    try:
+        LOGGER.info("Starting graceful shutdown...")
+        cleanup_api_server()
+        # Call the original cleanup function
+        exit_clean_up(signal, frame)
+    except Exception as e:
+        LOGGER.error(f"Error during cleanup: {e}")
+        exit_clean_up(signal, frame)
+
+
+
 async def main():
     await gather(
         start_cleanup(),
@@ -384,6 +1210,10 @@ async def main():
         log_check(),
     )
     await sync_to_async(start_aria2_listener, wait=False)
+
+    api_thread = Thread(target=start_integrated_api, daemon=True)
+    api_thread.start()
+    LOGGER.info("Integrated Bot API server started in background thread")
 
     bot.add_handler(
         MessageHandler(start, filters=command(BotCommands.StartCommand) & private)
@@ -429,10 +1259,17 @@ async def main():
     LOGGER.info(f"WZML-X Bot [@{bot_name}] Started!")
     if user:
         LOGGER.info(f"WZ's User [@{user.me.username}] Ready!")
+    
+    # Register signal handlers
+    ignal(SIGINT, exit_with_cleanup)
+    signal(SIGINT, exit_handler)
+    signal(SIGTERM, exit_handler)
     signal(SIGINT, exit_clean_up)
 
 
 async def stop_signals():
+    # Call the shutdown handler when stopping signals are received
+    shutdown_handler()
     if user:
         await gather(bot.stop(), user.stop())
     else:
@@ -443,3 +1280,9 @@ bot_run = bot.loop.run_until_complete
 bot_run(main())
 bot_run(idle())
 bot_run(stop_signals())
+
+# Add a signal handler function
+def exit_handler(signum, frame):
+    LOGGER.info(f"Received signal {signum}. Shutting down gracefully...")
+    shutdown_handler()
+    exit(0)
