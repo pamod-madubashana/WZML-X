@@ -24,8 +24,8 @@ services:
     #  # Server List Updater --> https://github.com/qdm12/gluetun-wiki/blob/main/setup/servers.md#update-the-vpn-servers-list
     #  - UPDATER_PERIOD=24h
     #ports:
-    #  - "80:80"
-    #  - "8080:8080"
+    #  - "8081:8081"
+    #  - "8082:8082"
     #restart: on-failure
   app:
     build: .
@@ -33,5 +33,8 @@ services:
     command: bash start.sh
     restart: on-failure
     ports:
-      - "80:80"
-      - "8080:8080"
+      - "8081:8081"
+      - "8082:8082"
+      - "7392:7392"
+    volumes:
+      - .:/usr/src/app

@@ -2,22 +2,31 @@ from time import time, monotonic
 from datetime import datetime
 from sys import executable
 from os import execl as osexecl
-from asyncio import create_subprocess_exec, gather, run as asyrun
+from asyncio import create_subprocess_exec, gather, run as asyrun, create_task, run_coroutine_threadsafe
+import asyncio
 from uuid import uuid4
 from base64 import b64decode
 from importlib import import_module, reload
+from threading import Thread
+import json
+import hmac
+import hashlib
+from time import monotonic
 
 from requests import get as rget
 from pytz import timezone
 from bs4 import BeautifulSoup
-from signal import signal, SIGINT, SIGTERM
+from signal import signal, SIGINT
 from aiofiles.os import path as aiopath, remove as aioremove
 from aiofiles import open as aiopen
 from pyrogram import idle
 from pyrogram.enums import ChatMemberStatus, ChatType
 from pyrogram.handlers import MessageHandler, CallbackQueryHandler
 from pyrogram.filters import command, private, regex
-from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message, User as PyroUser, Chat
+from flask import Flask, request, jsonify
+from functools import wraps
+from time import time
 
 from bot import (
     bot,
@@ -32,7 +41,6 @@ from bot import (
     QbInterval,
     INCOMPLETE_TASK_NOTIFIER,
     scheduler,
-    shutdown_handler,
 )
 from bot.version import get_version
 from .helper.ext_utils.fs_utils import start_cleanup, clean_all, exit_clean_up
@@ -392,9 +400,8 @@ def start_web_server():
 # =============================================
 # INTEGRATED BOT API - Direct Access to Bot Functions
 # =============================================
-
 # API Configuration
-API_SECRET = "your_bot_api_secret_key_here"  # Same as web server for consistency
+API_SECRET = "wzmlx_bot_api_secret_2025"  # Same as web server for consistency
 
 # Flask app for integrated API
 api_app = Flask(__name__)
@@ -441,10 +448,10 @@ async def create_real_message(text, from_user_id, chat_id=None, message_id=None,
                 "language": None,
                 "custom_emoji_id": None
             }]
+        
         # Create the real Message object with all required attributes
         real_message = Message(
             id=new_message_id,
-            message_id=new_message_id,
             from_user=real_user,
             sender_chat=None,
             date=datetime.now(),
@@ -452,14 +459,16 @@ async def create_real_message(text, from_user_id, chat_id=None, message_id=None,
             text=text,
             entities=entities,
             reply_to_message_id=target_reply_id,
-            reply_to_message=target_message,
-            client=bot  # Bind the bot client to the message
+            reply_to_message=target_message
         )
+        
+        # Bind the bot client to the message
+        real_message._client = bot
         
         # Parse command for easier access
         real_message.command = text.split()
         
-        # Create the link attribute
+        # Create proper Telegram link
         chat_link_id = abs(target_chat_id) - 1000000000000
         real_message.link = f"https://t.me/c/{chat_link_id}/{new_message_id}"
         
@@ -480,182 +489,49 @@ def create_enhanced_fake_message(text, from_user_id, chat_id=None, message_id=No
     target_chat_id = chat_id or -1002934661749
     target_reply_id = reply_to_message_id
     
-    # Create comprehensive fake User object with real user details
-    class FakeUser:
-        def __init__(self, user_id):
-            # Use real user details for user ID 7859877609
-            if user_id == 7859877609:
-                self.id = 7859877609
-                self.is_bot = False
-                self.first_name = "Pamod [\u2067[\u26a1"
-                self.username = "pamod_madubashana"
-                self.language_code = "en"
-            else:
-                # Default values for other users
-                self.id = user_id
-                self.first_name = "API User"
-                self.username = "api_user"
-                self.language_code = "en"
-            
-            # Common attributes
-            self.is_self = False
-            self.is_contact = False
-            self.is_mutual_contact = False
-            self.is_deleted = False
-            self.is_verified = False
-            self.is_restricted = False
-            self.is_scam = False
-            self.is_fake = False
-            self.is_premium = False
-            self.last_name = None
-            
-        def mention(self, style="text"):
-            """Return mention string for the user"""
-            if style == "html":
-                return f'<a href="tg://user?id={self.id}">{self.first_name}</a>'
-            else:
-                return f"@{self.username or self.first_name}"
-    
-    # Create comprehensive fake Chat object with real chat details
-    class FakeChat:
-        def __init__(self, chat_id):
-            # Use real supergroup details for -1002934661749
-            if chat_id == -1002934661749:
-                self.id = -1002934661749
-                self.type = ChatType.SUPERGROUP
-                self.title = "Serandip Leech"  # You can customize this
-                self.username = None  # Supergroups may or may not have usernames
-                self.first_name = None
-            elif chat_id == 7859877609:  # Private chat with user
-                self.id = 7859877609
-                self.type = ChatType.PRIVATE
-                self.first_name = "Pamod [\u2067[\u26a1"
-                self.username = "pamod_madubashana"
-                self.title = None
-            else:
-                # Default values for other chats
-                self.id = chat_id or -1001234567890
-                self.type = ChatType.SUPERGROUP
-                self.title = "Serandip Leech"
-                self.first_name = None
-                self.username = None
-            
-            # Common attributes
-            self.is_verified = False
-            self.is_restricted = False
-            self.is_creator = False
-            self.is_scam = False
-            self.is_fake = False
-    
-    # Create comprehensive fake Message object with real reply capabilities
+    # Create a simpler and more robust fake message implementation
     class FakeMessage:
         def __init__(self, text, user_id, chat_id, message_id=None, reply_to_id=379):
-            # Use provided message_id or generate one
-            self.id = message_id if message_id else int(time() * 1000)
-            self.message_id = self.id
+            self.id = message_id if message_id else int(time() * 1000) % 1000000
+            self.message_id = 379
             self.text = text
-            self.from_user = FakeUser(user_id)
-            self.chat = FakeChat(chat_id)
             self.date = datetime.now()
-            self.command = text.split()
-            self.reply_to_message_id = reply_to_id  # Always use the fixed reply ID
+            self.command = text.split() if text else []
+            self.reply_to_message_id = reply_to_id
             self.sender_chat = None
             self.media = None
-            self.client = bot  # Bind the bot client for real operations
+            self.client = bot  # This is critical - bind the actual bot client
+            self._client = bot  # Also bind as _client for compatibility
+            self.link = "https://t.me/c/2934661749/379"
             
-            # Create reply_to_message object that references the fixed message
-            class FakeReplyMessage:
-                def __init__(self, reply_id, chat_id):
-                    self.id = reply_id
-                    self.message_id = reply_id
-                    self.text = f"Target message {reply_id}"  # Placeholder text
-                    self.from_user = FakeUser(user_id)  # Same user
-                    self.chat = FakeChat(chat_id)  # Same chat
-                    self.date = datetime.now()
-                    self.media = None
-                    self.client = bot  # Bind the bot client
+            # Create proper user object
+            class FakeUser:
+                def __init__(self, user_id):
+                    self.id = user_id
+                    self.is_bot = False
+                    self.first_name = "API User"
+                    self.username = "api_user" if user_id != 7859877609 else "pamod_madubashana"
+                    self.language_code = "en"
                     
-                    # Add the missing link attribute for the fixed message
-                    if chat_id == -1002934661749:  # Your supergroup
-                        chat_link_id = abs(chat_id) - 1000000000000
-                        self.link = f"https://t.me/c/{chat_link_id}/{reply_id}"
-                    else:
-                        chat_link_id = abs(chat_id) - 1000000000000 if chat_id < 0 else chat_id
-                        self.link = f"https://t.me/c/{chat_link_id}/{reply_id}"
+                def mention(self, style="text"):
+                    return f"@{self.username}" if self.username else self.first_name
                     
-                    # Add common message attributes
-                    self.entities = []
-                    self.caption = None
-                    self.document = None
-                    self.video = None
-                    self.photo = None
-                    self.audio = None
-                    self.animation = None
-                    self.sticker = None
-                    self.voice = None
-                    self.video_note = None
-                    self.contact = None
-                    self.location = None
-                    self.venue = None
-                    self.poll = None
-                    self.dice = None
-                    self.web_page = None
-                    self.reply_markup = None
-                    self.forward_from = None
-                    self.forward_from_chat = None
-                    self.forward_date = None
-                    self.edit_date = None
-                    self.media_group_id = None
-                    self.author_signature = None
-                    self.views = None
-                    self.forwards = None
-                    self.reply_to_message = None
+            self.from_user = FakeUser(user_id)
+            
+            # Create proper chat object
+            class FakeChat:
+                def __init__(self, chat_id):
+                    self.id = chat_id
+                    self.type = ChatType.SUPERGROUP if chat_id < 0 else ChatType.PRIVATE
+                    self.title = "Serandip Leech" if chat_id < 0 else None
+                    self.username = None
+                    self.first_name = None
                     
-                    # Add REAL async methods that use the bot client
-                    async def reply(self, text, **kwargs):
-                        """Real reply using bot client"""
-                        try:
-                            return await bot.send_message(
-                                chat_id=chat_id,
-                                text=text,
-                                reply_to_message_id=reply_id,
-                                **kwargs
-                            )
-                        except Exception as e:
-                            LOGGER.error(f"Real reply error: {e}")
-                            return self
-                            
-                    async def delete(self, **kwargs):
-                        """Real delete using bot client"""
-                        try:
-                            return await bot.delete_messages(chat_id, reply_id)
-                        except Exception as e:
-                            LOGGER.error(f"Real delete error: {e}")
-                            return self
-
-                    async def edit_text(self, text, **kwargs):
-                        """Real edit using bot client"""
-                        try:
-                            return await bot.edit_message_text(
-                                chat_id=chat_id,
-                                message_id=reply_id,
-                                text=text,
-                                **kwargs
-                            )
-                        except Exception as e:
-                            LOGGER.error(f"Real edit error: {e}")
-                            return self
-                            
-                    # Bind methods to instance
-                    self.reply = reply
-                    self.delete = delete
-                    self.edit_text = edit_text
-                    
-            self.reply_to_message = FakeReplyMessage(reply_to_id, chat_id)
+            self.chat = FakeChat(chat_id)
             
             # Add entities for bot commands
             self.entities = []
-            if text.startswith('/'):
+            if text and text.startswith('/'):
                 command_part = text.split()[0]
                 self.entities = [{
                     "offset": 0,
@@ -667,50 +543,87 @@ def create_enhanced_fake_message(text, from_user_id, chat_id=None, message_id=No
             chat_link_id = abs(chat_id) - 1000000000000 if chat_id < 0 else chat_id
             self.link = f"https://t.me/c/{chat_link_id}/{self.id}"
             
-            # Add REAL async methods that use the bot client for the main message too
-            async def reply(self, text, **kwargs):
-                """Real reply using bot client"""
+            # Create reply_to_message object
+            class FakeReplyMessage:
+                def __init__(inner_self, reply_id, chat_id):
+                    inner_self.id = reply_id
+                    inner_self.message_id = reply_id
+                    inner_self.text = f"Target message {reply_id}"
+                    inner_self.date = datetime.now()
+                    inner_self.from_user = FakeUser(user_id)
+                    inner_self.chat = FakeChat(chat_id)
+                    inner_self.media = None
+                    inner_self.client = bot  # Critical: bind the actual bot client
+                    inner_self._client = bot  # Also bind as _client for compatibility
+                    
+                    # Create proper Telegram link for reply message
+                    reply_chat_link_id = abs(chat_id) - 1000000000000 if chat_id < 0 else chat_id
+                    inner_self.link = f"https://t.me/c/{reply_chat_link_id}/{reply_id}"
+                    
+                    # Simple reply method that returns a proper message object or None on error
+                    async def simple_reply(text,quote,reply_markup, **kwargs):
+                        try:
+                            result = await bot.send_message(
+                                chat_id=chat_id,
+                                text=text,
+                                reply_to_message_id=379,
+                                reply_markup=reply_markup,
+                            )
+                            return result
+                        except Exception as e:
+                            LOGGER.error(f"Reply error: {e}")
+                            return None  # Return None instead of string to avoid 'str' object errors
+                            
+                    inner_self.reply = simple_reply
+                    
+            self.reply_to_message = FakeReplyMessage(reply_to_id, chat_id)
+            
+            # Simple reply method for main message
+            async def simple_reply(text,quote,reply_markup, **kwargs):
                 try:
-                    return await bot.send_message(
+                    result = await bot.send_message(
                         chat_id=chat_id,
                         text=text,
-                        reply_to_message_id=self.id,
-                        **kwargs
+                        reply_to_message_id=379,
+                        reply_markup=reply_markup,
                     )
+                    return result
                 except Exception as e:
-                    LOGGER.error(f"Real reply error: {e}")
-                    return self
+                    LOGGER.error(f"Reply error: {e}")
+                    return None  # Return None instead of string to avoid 'str' object errors
                     
-            async def delete(self, **kwargs):
-                """Real delete using bot client"""
+            self.reply = simple_reply
+            
+            # Simple edit methods
+            async def simple_edit_text(text, **kwargs):
                 try:
-                    return await bot.delete_messages(chat_id, self.id)
-                except Exception as e:
-                    LOGGER.error(f"Real delete error: {e}")
-                    return self
-
-            async def edit_text(self, text, **kwargs):
-                """Real edit using bot client"""
-                try:
-                    return await bot.edit_message_text(
+                    result = await bot.edit_message_text(
                         chat_id=chat_id,
                         message_id=self.id,
                         text=text,
                         **kwargs
                     )
+                    return result
                 except Exception as e:
-                    LOGGER.error(f"Real edit error: {e}")
-                    return self
+                    LOGGER.error(f"Edit text error: {e}")
+                    return None  # Return None instead of string to avoid 'str' object errors
                     
-            async def edit(self, text, **kwargs):
-                """Real edit method (alternative)"""
-                return await self.edit_text(text, **kwargs)
+            async def simple_edit(text, **kwargs):
+                return await simple_edit_text(text, **kwargs)
                 
-            # Bind methods to instance
-            self.reply = reply
-            self.delete = delete
-            self.edit_text = edit_text
-            self.edit = edit
+            self.edit_text = simple_edit_text
+            self.edit = simple_edit
+            
+            # Simple delete method
+            async def simple_delete(**kwargs):
+                try:
+                    result = await bot.delete_messages(chat_id, self.id)
+                    return result
+                except Exception as e:
+                    LOGGER.error(f"Delete error: {e}")
+                    return None  # Return None instead of string to avoid 'str' object errors
+                    
+            self.delete = simple_delete
     
     return FakeMessage(text, from_user_id, target_chat_id, message_id, target_reply_id)
 
@@ -863,6 +776,12 @@ def api_leech():
         
         # Generate task ID
         task_id = f"api_leech_{int(time() * 1000)}"
+        
+        # Import bot_loop inside the function to ensure it's defined
+        from bot import bot_loop
+        
+        # Debug logging
+        LOGGER.info(f"Checking bot_loop: bot_loop={bot_loop}, is_closed={bot_loop.is_closed() if bot_loop else 'N/A'}")
         
         # Execute message creation and leech command in the bot's event loop
         if bot_loop and not bot_loop.is_closed():
@@ -1046,6 +965,12 @@ def api_mirror():
         
         task_id = f"api_mirror_{int(time() * 1000)}"
         
+        # Import bot_loop inside the function to ensure it's defined
+        from bot import bot_loop
+        
+        # Debug logging
+        LOGGER.info(f"Checking bot_loop for mirror: bot_loop={bot_loop}, is_closed={bot_loop.is_closed() if bot_loop else 'N/A'}")
+        
         if bot_loop and not bot_loop.is_closed():
             from bot.modules.mirror_leech import _mirror_leech
             
@@ -1201,6 +1126,10 @@ def exit_with_cleanup(signal, frame):
 
 
 async def main():
+    global bot_loop, api_thread
+    
+    # Store bot loop for API access
+    bot_loop = bot.loop
     await gather(
         start_cleanup(),
         torrent_search.initiate_search_tools(),
@@ -1261,9 +1190,7 @@ async def main():
         LOGGER.info(f"WZ's User [@{user.me.username}] Ready!")
     
     # Register signal handlers
-    ignal(SIGINT, exit_with_cleanup)
-    signal(SIGINT, exit_handler)
-    signal(SIGTERM, exit_handler)
+    signal(SIGINT, exit_with_cleanup)
     signal(SIGINT, exit_clean_up)
 
 
