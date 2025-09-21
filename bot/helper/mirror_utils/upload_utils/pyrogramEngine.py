@@ -579,7 +579,7 @@ class TgUploader:
                 buttons = await self.__buttons(self.__up_path, is_video)
                 nrml_media = await self.__client.send_document(
                     chat_id=self.__sent_msg.chat.id,
-                    reply_to_message_id=int(self.__sent_msg.id),
+                    # reply_to_message_id=int(self.__sent_msg.id),
                     document=self.__up_path,
                     thumb=thumb,
                     caption=cap_mono,
