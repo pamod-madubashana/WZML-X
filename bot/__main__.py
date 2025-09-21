@@ -415,73 +415,6 @@ api_thread = None
 # Store the WSGI server for cleanup
 api_server = None
 
-async def create_real_message(text, from_user_id, chat_id=None, message_id=None, reply_to_message_id=597):
-    """Create a real Pyrogram Message object that can be replied to by the bot"""
-    from pyrogram.types import Message, User, Chat
-    from pyrogram.enums import ChatType, MessageEntityType
-    from datetime import datetime
-    
-    # Always use the specified supergroup and reply to message 379
-    target_chat_id = -1002934661749  # Fixed supergroup
-    target_reply_id = reply_to_message_id  # Fixed message to reply to
-    
-    try:
-        # Get the real chat object from Telegram
-        real_chat = await bot.get_chat(target_chat_id)
-        
-        # Get the real user object from Telegram
-        real_user = await bot.get_users(from_user_id)
-        
-        # Get the target message to reply to
-        target_message = await bot.get_messages(target_chat_id, target_reply_id)
-        
-        # Create a new message ID (simulate a new message)
-        new_message_id = 597
-        
-        # Parse command entities
-        entities = []
-        if text.startswith('/'):
-            command_part = text.split()[0]
-            entities = [{
-                "type": MessageEntityType.BOT_COMMAND,
-                "offset": 0,
-                "length": len(command_part),
-                "url": None,
-                "user": None,
-                "language": None,
-                "custom_emoji_id": None
-            }]
-        
-        # Create the real Message object with all required attributes
-        real_message = Message(
-            id=new_message_id,
-            from_user=real_user,
-            sender_chat=None,
-            date=datetime.now(),
-            chat=real_chat,
-            text=text,
-            entities=entities,
-            reply_to_message_id=target_reply_id,
-            reply_to_message=target_message
-        )
-        
-        # Bind the bot client to the message
-        real_message._client = bot
-        
-        # Parse command for easier access
-        real_message.command = text.split()
-        
-        # Create proper Telegram link
-        chat_link_id = abs(target_chat_id) - 1000000000000
-        real_message.link = f"https://t.me/c/{chat_link_id}/{new_message_id}"
-        
-        LOGGER.info(f"Created real message ID {new_message_id} replying to {target_reply_id} in chat {target_chat_id}")
-        return real_message
-        
-    except Exception as e:
-        LOGGER.error(f"Failed to create real message: {e}")
-        # Fallback to enhanced fake message if real message creation fails
-        return create_enhanced_fake_message(text, from_user_id, target_chat_id, message_id, target_reply_id)
 
 def create_enhanced_fake_message(text, from_user_id, chat_id=None, message_id=None, reply_to_message_id=379):
     """Create an enhanced fake message as fallback with real reply capabilities"""
@@ -749,23 +682,13 @@ def api_leech():
                 LOGGER.info(f"Creating real message that always replies to message 379 in supergroup -1002934661749")
                 
                 # Use the new create_real_message function that always replies to message 379
-                fake_message = await create_real_message(
+                fake_message = create_enhanced_fake_message(
                     text=command_text,
                     from_user_id=user_id,
-                    chat_id=-1002934661749,  # Fixed supergroup
+                    chat_id=-1002934661749,
                     message_id=None,
-                    reply_to_message_id=379  # Always reply to message 379
+                    reply_to_message_id=379 
                 )
-                
-                if fake_message is None:
-                    # Fallback to enhanced fake message if real message creation fails
-                    fake_message = create_enhanced_fake_message(
-                        text=command_text,
-                        from_user_id=user_id,
-                        chat_id=-1002934661749,  # Fixed supergroup
-                        message_id=None,
-                        reply_to_message_id=379  # Always reply to message 379
-                    )
                 
                 return fake_message
             except Exception as e:
