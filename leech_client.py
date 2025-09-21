@@ -15,7 +15,7 @@ from typing import Dict, Optional
 class LeechAPIClient:
     """Dedicated client for leeching Telegram files via the Mirror Bot API"""
     
-    def __init__(self, base_url: str, api_secret: str):
+    def __init__(self, base_url: str="http://127.0.0.0:7392", api_secret: str="wzmlx_bot_api_secret_2025"):
         """
         Initialize the Leech API Client
         
@@ -78,8 +78,13 @@ class LeechAPIClient:
         except json.JSONDecodeError:
             return {"error": f"Invalid JSON response: {response.text}", "status_code": response.status_code}
     
-    def leech(self, file: str, command: str = "/leech", user_id: str = "7859877609", 
-              chat_id: str = "-1002934661749") -> Dict:
+    def leech(self, file: str, command: str, user_id: int ,chat_id: int) -> Dict:
+
+        def get_full_command(command: str, link: str) -> str:
+            parts = command.split()
+            parts.insert(1, link)
+            return ' '.join(parts)
+
         """
         Leeche a file (Telegram link or other URL) with a custom command
         
@@ -93,7 +98,7 @@ class LeechAPIClient:
             dict: Response from the API with task information
         """
         # Create the full command
-        full_command = f"{command} {file}"
+        full_command = get_full_command(command=command,link=file)
             
         # Prepare request data
         data = {
@@ -139,49 +144,30 @@ class LeechAPIClient:
         except:
             return False
 
+BASE_URL = "http://172.0.0.0:7392"
+API_SECRET = "wzmlx_bot_api_secret_2025"
 
-def main():
-    """Main function demonstrating leech client usage"""
-    # Configuration
-    BASE_URL = "http://139.162.28.139:7392"
-    API_SECRET = "wzmlx_bot_api_secret_2025"  # Same as in bot/__main__.py
-    USER_ID = "7859877609"  # Pamod's user ID
-    CHAT_ID = "-1002934661749"  # Supergroup ID
-    
-    # Initialize client
-    print("🚀 Initializing Leech API Client...")
-    client = LeechAPIClient(BASE_URL, API_SECRET)
-    
-    # Check if bot is available
-    if not client.is_bot_available():
+LeechClient = LeechAPIClient(BASE_URL, API_SECRET)
+
+def leech_file(link: str, command: str,chat_id: int , user_id: int):
+    if not LeechClient.is_bot_available(): 
         print("❌ Bot is not available!")
-        return
-    
+        return False
+
     print("✅ Bot is available and ready for leeching!")
     
-    # Get bot status
-    status = client.get_bot_status()
+    status = LeechClient.get_task_status()
     print(f"📊 Bot Status: {status.get('bot_status', 'Unknown')}")
     print(f"   Active Downloads: {status.get('active_downloads', 0)}")
-    
-    # Example 1: Leech a Telegram file (the specific one mentioned)
-    print("\n⚡ Leeching Telegram File:")
-    telegram_file_url = "https://t.me/c/3021633087/24"
-    result = client.leech(
-        file=telegram_file_url,
-        command="/leech",
-        user_id=USER_ID,
-        chat_id=CHAT_ID
+
+    result = LeechClient.leech(
+        file=link,
+        command=command,
+        chat_id=chat_id,
+        user_id=user_id
     )
     
     if result.get('status') == 'success':
-        task_id = result.get('task_id')
-        print(f"   ✅ Leech task submitted successfully!")
-        print(f"   Task ID: {task_id}")
-        print(f"   Command: {result.get('telegram_command')}")
-        print(f"   Auto Status: {result.get('auto_status')}")
+        return True
     else:
-        print(f"   ❌ Failed to submit leech task: {result.get('error')}")
-
-if __name__ == "__main__":
-    main()
+        return False    
